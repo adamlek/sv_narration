@@ -1,4 +1,4 @@
-from gold_standard import get_data
+from get_data import get_data
 from collections import defaultdict, Counter
 from etcdata import speech_verbs
 from dep_trees import generate_tree
@@ -13,9 +13,9 @@ from random import seed, random
 from sklearn.linear_model import LogisticRegression
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.model_selection import cross_val_score
-from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.metrics import f1_score, precision_score, recall_score, r2_score
 
-def extract_word_features(dialogue_line):
+def extract_word_features(dialogue_line, window_len):
     featureset, labelset = [], []
 
     sentence_indices = []
@@ -51,7 +51,6 @@ def extract_word_features(dialogue_line):
             for k, u in enumerate(units):
                 if i in u:
                     word_unit = k
-                    word_unit_ending = dialogue_line[u[-1]][2][1]
                     
             for k, s in enumerate(sentence_indices):
                 if i in s:
@@ -64,35 +63,20 @@ def extract_word_features(dialogue_line):
             f_num = len(f)
 
             # iterate over context
-            for j in range(1,7):
+            for j in range(1,window_len):
                 # next word
                 try:
-                    for m, s in enumerate(sentence_indices):
-                        if i+j in s:
-                            context_sentence_tree = generate_tree(sentence_stagger[m])
-
-                    f += word_features(dialogue_line[i+j][2], 
-                                       'following', 
-                                       str(j),
-                                       context_sentence_tree)
+                    f += word_features(dialogue_line[i+j][2])
                 except:
                     f += [0]*f_num
 
                 # previous word
                 try:
-                    for m, s in enumerate(sentence_indices):
-                        if i-j in s:
-                            context_sentence_tree = generate_tree(sentence_stagger[m])
-
-                    f += word_features(dialogue_line[i-j][2], 
-                                       'previous', 
-                                       str(j),
-                                       context_sentence_tree)
+                    f += word_features(dialogue_line[i-j][2])
                 except:
                     f += [0]*f_num
 
             f += [word_sentence_ending] 
-            #f += [word_unit_ending] 
             f += [word_sentence]
             f += [word_unit]
 
@@ -102,7 +86,7 @@ def extract_word_features(dialogue_line):
     return featureset, labelset
 
 
-def word_features(line, position, pos_num, sentence_tree=False):
+def word_features(line):
     fs = []
     fs.append(line[2].lower() in speech_verbs) # is speech verb
     fs.append(line[2].lower()) # word form
@@ -110,37 +94,12 @@ def word_features(line, position, pos_num, sentence_tree=False):
     fs.append(line[3]) # pos
     fs.append(line[3] == 'PUNCT') # pos is punct
     fs.append(line[4]) # grammar 
-
-    #fine-grained dependency features, WiP,WiP,WiP
-    dep_features = False
-    if dep_features:
-        word_node = '_'.join([line[0], line[1], line[-3]])
-        dep_edges = sentence_tree.edges()
-        dep_nodes = sentence_tree.nodes()
-
-        in_relations = len([x for x in dep_edges if x[1] == word_node])
-        fs.append(in_relations)
-
-        parataxis = [x for x in dep_nodes if 'parataxis' in x]
-        if parataxis:
-            fs.append(sentence_tree.has_edge(word_node, parataxis[0]))
-        
-        root_node = [x for x in dep_nodes if 'root' in x]
-        if root_node:
-            fs.append(sentence_tree.has_edge(word_node, root_node[0]))
-
-        fs.append(line[-3] == 'root')
-        fs.append(line[-3] == 'parataxis')
-
-        fs.append(len(dep_nodes)/len(dep_edges))
-
-    else:
-        fs.append(line[-3])
-        fs.append(line[-3] == 'root') 
+    fs.append(line[-3]) # dep relation
+    fs.append(line[-3] == 'root') # is root
 
     return fs
 
-def train_test_cvscore(data, labels):
+def train_test_tokencv(data, labels):
     # remove dev
     cutoff = int(len(labels)*0.05)
     data = data[cutoff:]
@@ -151,8 +110,6 @@ def train_test_cvscore(data, labels):
 
     print('lbs', len(labels))
     
-    #for s in ['precision','recall','f1']:
-    s = 'f1'
     folds = 10
     model = LogisticRegression(max_iter=10, solver='liblinear')
     score = cross_val_score(model, X=data, y=labels, cv=folds, scoring=s)
@@ -186,7 +143,7 @@ def cross_val_split(data, labels, mseed, cv=10, ratio=0.1):
 
         yield test_x, test_y, train_x, train_y
     
-def train_test_s(data, labels, mseed):
+def train_test_sentencecv(data, labels, mseed):
     # fit vectorizer
     vectorizer = DictVectorizer().fit(list(chain.from_iterable(data)))
 
@@ -209,40 +166,25 @@ def train_test_s(data, labels, mseed):
         train_x = vectorizer.transform(list(chain.from_iterable(train_x)))
         train_y = list(chain.from_iterable(train_y))
 
-        model = LogisticRegression(max_iter=100,
-                                   solver='liblinear')
+        model = LogisticRegression(max_iter=500,
+                                   solver='liblinear',
+                                   random_state=mseed)
         
         model.fit(train_x, train_y)
         r = model.predict(test_x)
-        #print(r)
+
         pred_sents = []
         preds = iter(list(r))
         for x in sents:
             pred_sents.append([next(preds) for _ in range(len(x))])
-
-        #for x, y in zip(sents, pred_sents):
-        #    print(len(x), len(y))
-
-        from eval_stuff import sentence_level_eval
-        analysis[i] = sentence_level_eval(sents, pred_sents)
         
         score[i] = np.array([precision_score(test_y, r),
                              recall_score(test_y, r),
                              f1_score(test_y, r)])
-        #return 1
-
-
-    print('full', np.mean(analysis[:,0]))
-    print('part', np.mean(analysis[:,1]))
-    print('errs', np.mean(analysis[:,2]))
-    print('none', np.mean(analysis[:,3]))
-    
-    print('pr', np.mean(score[:,0]))
-    print('re', np.mean(score[:,1]))
-    print('f1', np.mean(score[:,2]))
-    print()
-    
-    return np.array([np.mean(score[:,0]), np.mean(score[:,1]), np.mean(score[:,2])])
+        
+    return np.array([np.mean(score[:,0]),
+                     np.mean(score[:,1]),
+                     np.mean(score[:,2])])
     
 def dev_train_test(data, labels):
     vectorizer = DictVectorizer().fit(list(chain.from_iterable(data)))
@@ -262,32 +204,68 @@ def dev_train_test(data, labels):
     predY = model.predict(testX)
 
     score = f1_score(testY, predY)
+    print(score)
 
-def run_tests(disable=False):
-    with open('data.pickle', 'rb') as f:
+def window_len_test():
+    with open('./data/data.pickle', 'rb') as f:
         data = pickle.load(f)
     print('sentences in data:', len(data))
 
-    score = np.zeros((6,3))
-    # different meta seeds (controls the sentences in the test set)
-    for i, mseed in enumerate([3,6,9,12,15,18]):
+    window_len = 7
+    score = np.zeros((len(range(0,10)),3))
+
+    mseed = 6
+    for window_len in range(0,10):
         featureset = []
         labelset = []
         for p in data:
-            fp, lp = extract_word_features(p)
+            fp, lp = extract_word_features(p, window_len)
             featureset.append(fp)
             labelset.append(lp)
     
-        score[i] = train_test_s(featureset, labelset, mseed)
+        score[window_len] = train_test_sentencecv(featureset, labelset, mseed)        
 
-    #print('--- pr', np.mean(score[:,0]))
-    #print('--- re', np.mean(score[:,1]))
-    #print('--- f1', np.mean(score[:,2]))
-        
+    for wlen, score in enumerate(score):
+        print(wlen, score)
 
+def test():
+    with open('./data/data.pickle', 'rb') as f:
+        data = pickle.load(f)
+    print('sentences in data:', len(data))
+
+    window_len = 4
+    score = np.zeros((len(range(0,10)),3))
+
+    mseed = 6
+    featureset = []
+    labelset = []
+    for p in data:
+        fp, lp = extract_word_features(p, window_len)
+        featureset.append(fp)
+        labelset.append(lp)
     
+    score = train_test_sentencecv(featureset, labelset, mseed)
+    print(score)
+
+def test_dev():
+    with open('./data/data.pickle', 'rb') as f:
+        data = pickle.load(f)
+    print('sentences in data:', len(data))
+
+    featureset = []
+    labelset = []
+    for p in data:
+        fp, lp = extract_word_features(p, 4)
+        featureset.append(fp)
+        labelset.append(lp)
+
+    dev_train_test(featureset, labelset)
+        
 if __name__ == '__main__':
+    #test_dev()
     run_tests()
+    
+
 
 
  

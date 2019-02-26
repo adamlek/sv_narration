@@ -9,6 +9,7 @@ import networkx as nx
 import numpy as np
 import numpy.random as npr
 from random import seed, random
+import math
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.feature_extraction import DictVectorizer
@@ -47,7 +48,6 @@ def extract_word_features(dialogue_line, window_len):
             # dont predict PUNCT
             continue
         else:
-
             for k, u in enumerate(units):
                 if i in u:
                     word_unit = k
@@ -57,9 +57,7 @@ def extract_word_features(dialogue_line, window_len):
                     word_sentence = k
                     word_sentence_ending = dialogue_line[s[-1]][2][1]
             
-            sentence_tree = generate_tree(sentence_stagger[word_sentence])
-            
-            f = word_features(info, 'current=', str(i)+'=', sentence_tree)
+            f = word_features(info)
             f_num = len(f)
 
             # iterate over context
@@ -86,16 +84,16 @@ def extract_word_features(dialogue_line, window_len):
     return featureset, labelset
 
 
-def word_features(line):
+def word_features(token_entry):
     fs = []
-    fs.append(line[2].lower() in speech_verbs) # is speech verb
-    fs.append(line[2].lower()) # word form
-    fs.append(line[1] in ['?','!']) # is exclamation
-    fs.append(line[3]) # pos
-    fs.append(line[3] == 'PUNCT') # pos is punct
-    fs.append(line[4]) # grammar 
-    fs.append(line[-3]) # dep relation
-    fs.append(line[-3] == 'root') # is root
+    fs.append(token_entry[2].lower() in speech_verbs) # is speech verb
+    fs.append(token_entry[2].lower()) # word form
+    fs.append(token_entry[1] in ['?','!']) # is exclamation
+    fs.append(token_entry[3]) # pos
+    fs.append(token_entry[3] == 'PUNCT') # pos is punct
+    fs.append(token_entry[4]) # grammar 
+    fs.append(token_entry[-3]) # dep relation
+    fs.append(token_entry[-3] == 'root') # is root
 
     return fs
 
@@ -117,7 +115,7 @@ def train_test_tokencv(data, labels):
 
 def cross_val_split(data, labels, mseed, cv=10, ratio=0.1):
     
-    seed(mseed)
+    #seed(mseed)
     
     indices = set([i for (i,x) in enumerate(labels)])
     # sentences with/without narration
@@ -128,7 +126,7 @@ def cross_val_split(data, labels, mseed, cv=10, ratio=0.1):
     seeds = npr.randint(100, size=cv)
 
     for i in range(cv):
-        seed(seeds[i])
+        #seed(seeds[i])
         
         te_s = int((len(data)*ratio)/2)
         test = set(npr.choice(t_sentences, te_s, replace=False)).union(
@@ -209,11 +207,8 @@ def dev_train_test(data, labels):
 def window_len_test():
     with open('./data/data.pickle', 'rb') as f:
         data = pickle.load(f)
-    print('sentences in data:', len(data))
 
-    window_len = 7
     score = np.zeros((len(range(0,10)),3))
-
     mseed = 6
     for window_len in range(0,10):
         featureset = []
@@ -231,7 +226,6 @@ def window_len_test():
 def test():
     with open('./data/data.pickle', 'rb') as f:
         data = pickle.load(f)
-    print('sentences in data:', len(data))
 
     window_len = 4
     score = np.zeros((len(range(0,10)),3))
@@ -245,12 +239,12 @@ def test():
         labelset.append(lp)
     
     score = train_test_sentencecv(featureset, labelset, mseed)
-    print(score)
+    print('\t'.join(['pr', 're', 'f1']))
+    print('\t'.join(map(lambda x: str(np.round(x, 3)), score)))
 
 def test_dev():
     with open('./data/data.pickle', 'rb') as f:
         data = pickle.load(f)
-    print('sentences in data:', len(data))
 
     featureset = []
     labelset = []
@@ -263,7 +257,7 @@ def test_dev():
         
 if __name__ == '__main__':
     #test_dev()
-    run_tests()
+    test()
     
 
 

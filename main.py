@@ -1,28 +1,22 @@
 from get_data import get_data
 from collections import defaultdict, Counter
 from etcdata import speech_verbs
-from dep_trees import generate_tree
 from itertools import chain
-from matplotlib import pyplot
 import pickle
-import networkx as nx
 import numpy as np
 import numpy.random as npr
 from random import seed, random
 import math
-
 from sklearn.linear_model import LogisticRegression
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.model_selection import cross_val_score
-from sklearn.metrics import f1_score, precision_score, recall_score, r2_score
+from sklearn.metrics import f1_score, precision_score, recall_score
 
-def extract_word_features(dialogue_line, window_len):
-    featureset, labelset = [], []
-
+def extract_sentence_features(dialogue_line):
     sentence_indices = []
     sentence_stagger = []
     units = [[]]
-
+    
     # structure each dialogue line into word units and sentences 
     for j, (l, w, word_info) in enumerate(dialogue_line):
         if word_info[0] == '1':
@@ -40,8 +34,15 @@ def extract_word_features(dialogue_line, window_len):
             units.append([])
         else:
             units[-1].append(j)
-    
+
     units = [x for x in units if x]
+
+    return sentence_indices, sentence_stagger, units
+
+def extract_word_features(dialogue_line, window_len):
+    featureset, labelset = [], []
+
+    sentence_indices, sentence_stagger, units = extract_sentence_features(dialogue_line)
     
     for i, (label, word, info) in enumerate(dialogue_line):
         if info[3] == 'PUNCT':
@@ -74,9 +75,9 @@ def extract_word_features(dialogue_line, window_len):
                 except:
                     f += [0]*f_num
 
-            f += [word_sentence_ending] 
-            f += [word_sentence]
-            f += [word_unit]
+            f += [word_sentence_ending] # sentence ending
+            f += [word_sentence] # sentence id
+            f += [word_unit] # unit id
 
             featureset.append({f'feature_{i}':x for (i, x) in enumerate(f)})
             labelset.append(label)
@@ -94,24 +95,7 @@ def word_features(token_entry):
     fs.append(token_entry[4]) # grammar 
     fs.append(token_entry[-3]) # dep relation
     fs.append(token_entry[-3] == 'root') # is root
-
     return fs
-
-def train_test_tokencv(data, labels):
-    # remove dev
-    cutoff = int(len(labels)*0.05)
-    data = data[cutoff:]
-    labels = labels[cutoff:]
-
-    data = DictVectorizer().fit_transform(list(chain.from_iterable(data)))
-    labels = list(chain.from_iterable(labels))
-
-    print('lbs', len(labels))
-    
-    folds = 10
-    model = LogisticRegression(max_iter=10, solver='liblinear')
-    score = cross_val_score(model, X=data, y=labels, cv=folds, scoring=s)
-    print(s, sum(score)/folds)
 
 def cross_val_split(data, labels, mseed, cv=10, ratio=0.1):
     
@@ -123,10 +107,10 @@ def cross_val_split(data, labels, mseed, cv=10, ratio=0.1):
     f_sentences = np.array([i for i in indices if i not in t_sentences])
 
     # fold seeds
-    seeds = npr.randint(100, size=cv)
-
+    seeds = npr.randint(100, size=cv)    
+    
     for i in range(cv):
-        #seed(seeds[i])
+        seed(seeds[i])
         
         te_s = int((len(data)*ratio)/2)
         test = set(npr.choice(t_sentences, te_s, replace=False)).union(
@@ -164,18 +148,19 @@ def train_test_sentencecv(data, labels, mseed):
         train_x = vectorizer.transform(list(chain.from_iterable(train_x)))
         train_y = list(chain.from_iterable(train_y))
 
-        model = LogisticRegression(max_iter=500,
-                                   solver='liblinear',
-                                   random_state=mseed)
-        
+        model = LogisticRegression(max_iter=500, solver='liblinear', random_state=mseed)
+
         model.fit(train_x, train_y)
+        
         r = model.predict(test_x)
 
+        """
         pred_sents = []
         preds = iter(list(r))
         for x in sents:
             pred_sents.append([next(preds) for _ in range(len(x))])
-        
+        """
+
         score[i] = np.array([precision_score(test_y, r),
                              recall_score(test_y, r),
                              f1_score(test_y, r)])
@@ -196,7 +181,7 @@ def dev_train_test(data, labels):
     testX = vectorizer.transform(list(chain.from_iterable(testX)))
     testY = list(chain.from_iterable(testY))
 
-    model = LogisticRegression(max_iter=100, solver='liblinear')
+    model = LogisticRegression(max_iter=500, solver='liblinear')
     model.fit(trainX, trainY)
 
     predY = model.predict(testX)
@@ -209,7 +194,7 @@ def window_len_test():
         data = pickle.load(f)
 
     score = np.zeros((len(range(0,10)),3))
-    mseed = 6
+    mseed = 9
     for window_len in range(0,10):
         featureset = []
         labelset = []
@@ -228,18 +213,16 @@ def test():
         data = pickle.load(f)
 
     window_len = 4
-    score = np.zeros((len(range(0,10)),3))
+    mseed = 9
 
-    mseed = 6
-    featureset = []
-    labelset = []
+    featureset, labelset = [], []
     for p in data:
         fp, lp = extract_word_features(p, window_len)
         featureset.append(fp)
         labelset.append(lp)
     
     score = train_test_sentencecv(featureset, labelset, mseed)
-    print('\t'.join(['pr', 're', 'f1']))
+    print('\t'.join(['prec', 'recl', 'f1']))
     print('\t'.join(map(lambda x: str(np.round(x, 3)), score)))
 
 def test_dev():

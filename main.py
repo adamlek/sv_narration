@@ -1,4 +1,4 @@
-from get_data import get_data
+from gold_standard import get_data
 from collections import defaultdict, Counter
 from etcdata import speech_verbs
 from itertools import chain
@@ -98,8 +98,7 @@ def word_features(token_entry):
     return fs
 
 def cross_val_split(data, labels, mseed, cv=10, ratio=0.1):
-    
-    #seed(mseed)
+    npr.seed(mseed)
     
     indices = set([i for (i,x) in enumerate(labels)])
     # sentences with/without narration
@@ -107,10 +106,10 @@ def cross_val_split(data, labels, mseed, cv=10, ratio=0.1):
     f_sentences = np.array([i for i in indices if i not in t_sentences])
 
     # fold seeds
-    seeds = npr.randint(100, size=cv)    
+    seeds = npr.randint(1000, size=cv)
     
     for i in range(cv):
-        seed(seeds[i])
+        npr.seed(seeds[i])
         
         te_s = int((len(data)*ratio)/2)
         test = set(npr.choice(t_sentences, te_s, replace=False)).union(
@@ -148,7 +147,10 @@ def train_test_sentencecv(data, labels, mseed):
         train_x = vectorizer.transform(list(chain.from_iterable(train_x)))
         train_y = list(chain.from_iterable(train_y))
 
-        model = LogisticRegression(max_iter=500, solver='liblinear', random_state=mseed)
+        model = LogisticRegression(max_iter=500,
+                                   solver='liblinear',
+                                   tol=1e-8,
+                                   random_state=mseed)
 
         model.fit(train_x, train_y)
         
@@ -159,6 +161,7 @@ def train_test_sentencecv(data, labels, mseed):
         preds = iter(list(r))
         for x in sents:
             pred_sents.append([next(preds) for _ in range(len(x))])
+        # add code for sentence-eval
         """
 
         score[i] = np.array([precision_score(test_y, r),
@@ -203,7 +206,9 @@ def window_len_test():
             featureset.append(fp)
             labelset.append(lp)
     
-        score[window_len] = train_test_sentencecv(featureset, labelset, mseed)        
+        score[window_len] = train_test_sentencecv(featureset,
+                                                  labelset,
+                                                  mseed)        
 
     for wlen, score in enumerate(score):
         print(wlen, score)
@@ -213,18 +218,23 @@ def test():
         data = pickle.load(f)
 
     window_len = 4
-    mseed = 9
-
-    featureset, labelset = [], []
-    for p in data:
-        fp, lp = extract_word_features(p, window_len)
-        featureset.append(fp)
-        labelset.append(lp)
+    mseed = 4041
+    for mseed in npr.randint(9999, size=500):
+        featureset, labelset = [], []
+        for p in data:
+            fp, lp = extract_word_features(p, window_len)
+            featureset.append(fp)
+            labelset.append(lp)
     
-    score = train_test_sentencecv(featureset, labelset, mseed)
-    print('\t'.join(['prec', 'recl', 'f1']))
-    print('\t'.join(map(lambda x: str(np.round(x, 3)), score)))
-
+        score = train_test_sentencecv(featureset,
+                                      labelset,
+                                      mseed)
+        #print('\t'.join(['prec', 'recl', 'f1']))
+        if score[2] > 0.8:
+            print('>>>', mseed, '\t'.join(map(lambda x: str(x), score)))
+        else:
+            print(mseed, '\t'.join(map(lambda x: str(x), score)))
+            
 def test_dev():
     with open('./data/data.pickle', 'rb') as f:
         data = pickle.load(f)

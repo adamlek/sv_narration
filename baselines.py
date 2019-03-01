@@ -38,7 +38,7 @@ def random_baseline():
     print('re', re)
 
 def h2_baseline():
-    with open('data.pickle', 'rb') as f:
+    with open('.data/data.pickle', 'rb') as f:
         data = pickle.load(f)
 
     lbs_gold = []
@@ -83,7 +83,7 @@ def h2_baseline():
     print('f1', f1)
         
 def h1_baseline():
-    with open('data.pickle', 'rb') as f:
+    with open('./data/data.pickle', 'rb') as f:
         data = pickle.load(f)
 
     lbs_gold = []

@@ -41,7 +41,6 @@ def extract_sentence_features(dialogue_line):
 
 def extract_word_features(dialogue_line, window_len):
     featureset, labelset = [], []
-
     sentence_indices, sentence_stagger, units = extract_sentence_features(dialogue_line)
     
     for i, (label, word, info) in enumerate(dialogue_line):
@@ -139,17 +138,15 @@ def train_test_sentencecv(data, labels, mseed):
     analysis = np.zeros((folds, 4))
     score = np.zeros((folds,3))
     for i, (test_x, test_y, train_x, train_y) in enumerate(cvs):
-        sents = [x for x in test_y]
-
         test_x = vectorizer.transform(list(chain.from_iterable(test_x)))
         test_y = list(chain.from_iterable(test_y))
-
+  
         train_x = vectorizer.transform(list(chain.from_iterable(train_x)))
         train_y = list(chain.from_iterable(train_y))
 
         model = LogisticRegression(max_iter=500,
                                    solver='liblinear',
-                                   tol=1e-8,
+                                   #tol=1e-8,
                                    random_state=mseed)
 
         model.fit(train_x, train_y)
@@ -157,16 +154,17 @@ def train_test_sentencecv(data, labels, mseed):
         r = model.predict(test_x)
 
         """
+        sents = [x for x in test_y]
         pred_sents = []
         preds = iter(list(r))
         for x in sents:
             pred_sents.append([next(preds) for _ in range(len(x))])
-        # add code for sentence-eval
         """
 
         score[i] = np.array([precision_score(test_y, r),
                              recall_score(test_y, r),
                              f1_score(test_y, r)])
+        print(i, score[i])
         
     return np.array([np.mean(score[:,0]),
                      np.mean(score[:,1]),
@@ -219,21 +217,16 @@ def test():
 
     window_len = 4
     mseed = 4041
-    for mseed in npr.randint(9999, size=500):
-        featureset, labelset = [], []
-        for p in data:
-            fp, lp = extract_word_features(p, window_len)
-            featureset.append(fp)
-            labelset.append(lp)
+    featureset, labelset = [], []
+    for p in data:
+        fp, lp = extract_word_features(p, window_len)
+        featureset.append(fp)
+        labelset.append(lp)
     
-        score = train_test_sentencecv(featureset,
-                                      labelset,
-                                      mseed)
-        #print('\t'.join(['prec', 'recl', 'f1']))
-        if score[2] > 0.8:
-            print('>>>', mseed, '\t'.join(map(lambda x: str(x), score)))
-        else:
-            print(mseed, '\t'.join(map(lambda x: str(x), score)))
+    score = train_test_sentencecv(featureset,
+                                  labelset,
+                                  mseed)
+    print(score)
             
 def test_dev():
     with open('./data/data.pickle', 'rb') as f:
